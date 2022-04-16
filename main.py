@@ -39,15 +39,18 @@ class Assignment:
 
 
 class AllAssignments:
-    IGNORE = ("***REMOVED***",
-              "***REMOVED***", "***REMOVED***",
-              "***REMOVED***", "***REMOVED***")
-
     def __init__(self):
+        try:
+            with open("ignored.txt") as f:
+                IGNORE = f.readlines()
+        except FileNotFoundError:
+            IGNORE = []
+
         self.service = authenticate()
         self.courses = self.service.courses().list(
                 courseStates=["ACTIVE"], studentId="me",
                 fields="courses(id,name)").execute()["courses"]
+        self.courses = [course for course in self.courses if course["name"] not in IGNORE]
         self.all_work = []
         start_new_thread(self.get_work, ())
 
@@ -69,8 +72,6 @@ class AllAssignments:
         current_work = []
 
         for course in self.courses:
-            if course["name"] in self.__class__.IGNORE:
-                continue
             course_id = course["id"]
 
             results = self.service.courses().courseWork().studentSubmissions().list(
