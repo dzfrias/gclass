@@ -69,28 +69,39 @@ class AllAssignments:
         # their latest assignments every time
         start_new_thread(self.get_work, ())
 
+    @staticmethod
+    def partial_input(user_command):
+        VALID_COMMANDS = ("list", "exit")
+        for command in VALID_COMMANDS:
+            matching = all([char == char2 for char, char2 in zip(command, user_command)])
+            if command[:2] == user_command[:2] and matching:
+                return command
+
     def run(self):
         command = ""
-        while command != "exit" and command != "ex":
-            command = input("\n-> ")
+        while command != "exit":
+            command = self.partial_input(input("\n-> "))
             if command == "list":
                 for number, work in enumerate(self.all_work, 1):
                     print(f"{number}. {work}")
-            elif command != "exit" and command != "ex":
+            elif command != "exit":
                 print("Invalid command")
 
     @staticmethod
     def load_work() -> list[Assignment]:
         current_work = []
-        with open("assignments.json") as f:
-            for work in json.load(f)["assignments"]:
-                current_work.append(
-                        Assignment(
-                            work["name"],
-                            work["description"],
-                            date(**work["due_date"])
+        try:
+            with open("assignments.json") as f:
+                for work in json.load(f)["assignments"]:
+                    current_work.append(
+                            Assignment(
+                                work["name"],
+                                work["description"],
+                                date(**work["due_date"])
+                                )
                             )
-                        )
+        except FileNotFoundError:
+            pass
         return current_work
 
     def get_work(self):
