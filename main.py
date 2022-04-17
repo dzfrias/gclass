@@ -35,10 +35,15 @@ class Assignment:
     course: str
 
     def __post_init__(self):
+        # Makes all assignments sorted by due_date
         self.sort_index = self.due_date
 
     def describe(self):
-        return self.description
+        print("Course: " + self.course)
+        print(self.due_date.strftime(
+            f"Due: %B %-d{day_suffix(self.due_date.day)} %Y\n"))
+        print(f"{self.name}\n{'-' * len(self.name)}")
+        print(self.description)
 
     def __str__(self):
         formatted_date = self.due_date.strftime(
@@ -82,7 +87,7 @@ class AllAssignments:
 
     @staticmethod
     def partial_input(user_command) -> str | None:
-        VALID_COMMANDS = ("list", "exit")
+        VALID_COMMANDS = ("list", "exit", "look", "today")
         for command in VALID_COMMANDS:
             matching = all([char == char2 for char, char2 in zip(command, user_command)])
             if command[:2] == user_command[:2] and matching:
@@ -92,10 +97,31 @@ class AllAssignments:
     def run(self):
         command = ""
         while command != "exit":
-            command = self.partial_input(input("\n-> "))
+            inp = input("\n-> ").split()
+            command = self.partial_input(inp[0])
+            try:
+                try:
+                    target = int(inp[1])
+                    if target - 1 < 0:
+                        print("Invalid target")
+                        target = None
+                except ValueError:
+                    print("Target needs to be a number")
+                    target = None
+            except IndexError:
+                target = None
             if command == "list":
                 for number, work in enumerate(sorted(self.all_work), 1):
                     print(f"{number}. {work}")
+            elif command == "look":
+                try:
+                    sorted(self.all_work)[target - 1].describe()
+                except TypeError:
+                    print("Command `look` needs a valid target")
+            elif command == "today":
+                today = date.today()
+                print(today.strftime(
+                    f"%B %-d{day_suffix(today.day)} %Y"))
             elif command != "exit":
                 print("Invalid command")
 
