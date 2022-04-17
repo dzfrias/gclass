@@ -8,6 +8,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from _thread import start_new_thread
+from os import get_terminal_size
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/classroom.courses.readonly',
@@ -22,6 +23,10 @@ def day_suffix(day) -> str:
         return date_suffix[day % 10]
     else:
         return date_suffix[0]
+
+
+def format_day(day: date):
+    return day.strftime(f"%B %-d{day_suffix(day.day)}")
 
 
 @dataclass(order=True)
@@ -41,14 +46,12 @@ class Assignment:
     def describe(self):
         print("Course: " + self.course)
         print(self.due_date.strftime(
-            f"Due: %B %-d{day_suffix(self.due_date.day)} %Y\n"))
+            f"Due: {format_day(self.due_date)} %Y\n"))
         print(f"{self.name}\n{'-' * len(self.name)}")
         print(self.description)
 
     def __str__(self):
-        formatted_date = self.due_date.strftime(
-                f"%B %-d{day_suffix(self.due_date.day)}")
-        return f"{self.name} --- Due: {formatted_date}"
+        return f"{self.name} --- Due: {format_day(self.due_date)}"
 
     def as_dict(self):
         # Makes a copy of __dict__
@@ -98,7 +101,10 @@ class AllAssignments:
         command = ""
         while command != "exit":
             inp = input("\n-> ").split()
-            command = self.partial_input(inp[0])
+            try:
+                command = self.partial_input(inp[0])
+            except IndexError:
+                command = ""
             try:
                 try:
                     target = int(inp[1])
@@ -110,18 +116,26 @@ class AllAssignments:
                     target = None
             except IndexError:
                 target = None
+
             if command == "list":
+                bar_printed = False
                 for number, work in enumerate(sorted(self.all_work), 1):
+                    if not bar_printed and work.due_date >= date.today():
+                        # Prints a header bar with the current day
+                        term_columns = get_terminal_size()[0]
+                        print("-" * term_columns)
+                        print("TODAY".center(term_columns), end="\r")
+                        print(format_day(date.today()))
+                        print("-" * term_columns)
+                        bar_printed = True
                     print(f"{number}. {work}")
+
             elif command == "look":
                 try:
                     sorted(self.all_work)[target - 1].describe()
                 except TypeError:
                     print("Command `look` needs a valid target")
-            elif command == "today":
-                today = date.today()
-                print(today.strftime(
-                    f"%B %-d{day_suffix(today.day)} %Y"))
+
             elif command != "exit":
                 print("Invalid command")
 
