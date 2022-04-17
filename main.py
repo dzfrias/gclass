@@ -4,6 +4,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+import json
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from _thread import start_new_thread
@@ -14,10 +15,10 @@ SCOPES = ['https://www.googleapis.com/auth/classroom.courses.readonly',
           'https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly']
 
 
-def day_suffix(day):
-    date_suffix = ["th", "st", "nd", "rd"]
+def day_suffix(day) -> str:
+    date_suffix = ("th", "st", "nd", "rd")
 
-    if day % 10 in [1, 2, 3] and day not in [11, 12, 13]:
+    if day % 10 in (1, 2, 3) and day not in (11, 12, 13):
         return date_suffix[day % 10]
     else:
         return date_suffix[0]
@@ -36,37 +37,61 @@ class Assignment:
         formatted_date = self.due_date.strftime(
                 f"%B %-d{day_suffix(self.due_date.day)}")
         return f"{self.name} --- Due: {formatted_date}"
+    
+    def as_dict(self):
+        return {"name": self.name,
+                "description": self.description,
+                "due_date": {
+                    "year": self.due_date.year,
+                    "month": self.due_date.month,
+                    "day": self.due_date.day
+                    }
+                }
 
 
 class AllAssignments:
     def __init__(self):
         try:
             with open("ignored.txt") as f:
+                # Ignores certain courses the user chooses
                 IGNORE = f.readlines()
         except FileNotFoundError:
             IGNORE = []
 
         self.service = authenticate()
+        # Finds all courses of current user
         self.courses = self.service.courses().list(
                 courseStates=["ACTIVE"], studentId="me",
                 fields="courses(id,name)").execute()["courses"]
         self.courses = [course for course in self.courses if course["name"] not in IGNORE]
-        self.all_work = []
+        self.all_work = self.load_work()
+        # Does this in the background so the user doesn't have to wait to see
+        # their latest assignments every time
         start_new_thread(self.get_work, ())
 
     def run(self):
         command = ""
         while command != "exit" and command != "ex":
-            print()
-            command = input("-> ")
+            command = input("\n-> ")
             if command == "list":
-                if self.all_work:
-                    for number, work in enumerate(self.all_work, 1):
-                        print(f"{number}. {work}")
-                else:
-                    print("Still gathering data...")
+                for number, work in enumerate(self.all_work, 1):
+                    print(f"{number}. {work}")
             elif command != "exit" and command != "ex":
                 print("Invalid command")
+
+    @staticmethod
+    def load_work() -> list[Assignment]:
+        current_work = []
+        with open("assignments.json") as f:
+            for work in json.load(f)["assignments"]:
+                current_work.append(
+                        Assignment(
+                            work["name"],
+                            work["description"],
+                            date(**work["due_date"])
+                            )
+                        )
+        return current_work
 
     def get_work(self):
         current_work = []
@@ -90,6 +115,7 @@ class AllAssignments:
             week_range = [today - timedelta(days=i) for i in range(-7, 8)]
             for index, work in enumerate(classwork):
                 if "dueDate" not in work or date(**work["dueDate"]) not in week_range:
+                    # Cuts off the assignments not within the range
                     classwork = classwork[:index]
 
             for result in results["studentSubmissions"]:
@@ -98,12 +124,27 @@ class AllAssignments:
                         try:
                             current_work.append(Assignment(
                                     work["title"],
-                                    work.get("description", "None"),
+                                    work.get(
+                                        "description",
+                                        "No description for this assignment"
+                                        ),
                                     date(**work["dueDate"])))
                         except KeyError:
                             pass
                         break
-        self.all_work = current_work
+
+        if self.all_work != current_work:
+            # Moves cursor to the line above and resets prompt
+            print("\n\x1b[0G\x1b[1ACurrent work updated! Refresh using `list`",
+                    end="\n-> ")
+            self.all_work = current_work
+            with open("assignments.json", "w") as f:
+                all_assignments_dict = {
+                        "assignments": [
+                            work.as_dict() for work in self.all_work
+                            ]
+                        }
+                json.dump(all_assignments_dict, f, indent=4)
 
 
 def authenticate():
