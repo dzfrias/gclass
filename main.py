@@ -24,11 +24,18 @@ def day_suffix(day) -> str:
         return date_suffix[0]
 
 
-@dataclass
+@dataclass(order=True)
 class Assignment:
+    sort_index: date = field(init=False, repr=False)
+
+    # Parameters
     name: str
     description: str = field(repr=False)
     due_date: date
+    course: str
+
+    def __post_init__(self):
+        self.sort_index = self.due_date
 
     def describe(self):
         return self.description
@@ -37,20 +44,30 @@ class Assignment:
         formatted_date = self.due_date.strftime(
                 f"%B %-d{day_suffix(self.due_date.day)}")
         return f"{self.name} --- Due: {formatted_date}"
-    
+
     def as_dict(self):
-        return {"name": self.name,
-                "description": self.description,
-                "due_date": {
-                    "year": self.due_date.year,
-                    "month": self.due_date.month,
-                    "day": self.due_date.day
-                    }
+        # Makes a copy of __dict__
+        self_dict = dict(self.__dict__)
+        self_dict["due_date"] = {
+                "year": self.due_date.year,
+                "month": self.due_date.month,
+                "day": self.due_date.day
                 }
+        del self_dict["sort_index"]
+        return self_dict
 
 
 class AllAssignments:
     def __init__(self):
+        self.service = authenticate()
+        # Finds all courses of current user
+        self.courses = self.get_courses()
+        self.all_work = self.load_work()
+        # Does this in the background so the user doesn't have to wait to see
+        # their latest assignments every time
+        start_new_thread(self.get_work, ())
+
+    def get_courses(self):
         try:
             with open("ignored.txt") as f:
                 # Ignores certain courses the user chooses
@@ -58,31 +75,26 @@ class AllAssignments:
         except FileNotFoundError:
             IGNORE = []
 
-        self.service = authenticate()
-        # Finds all courses of current user
-        self.courses = self.service.courses().list(
+        courses = self.service.courses().list(
                 courseStates=["ACTIVE"], studentId="me",
                 fields="courses(id,name)").execute()["courses"]
-        self.courses = [course for course in self.courses if course["name"] not in IGNORE]
-        self.all_work = self.load_work()
-        # Does this in the background so the user doesn't have to wait to see
-        # their latest assignments every time
-        start_new_thread(self.get_work, ())
+        return [course for course in courses if course["name"] not in IGNORE]
 
     @staticmethod
-    def partial_input(user_command):
+    def partial_input(user_command) -> str | None:
         VALID_COMMANDS = ("list", "exit")
         for command in VALID_COMMANDS:
             matching = all([char == char2 for char, char2 in zip(command, user_command)])
             if command[:2] == user_command[:2] and matching:
                 return command
+        return None
 
     def run(self):
         command = ""
         while command != "exit":
             command = self.partial_input(input("\n-> "))
             if command == "list":
-                for number, work in enumerate(self.all_work, 1):
+                for number, work in enumerate(sorted(self.all_work), 1):
                     print(f"{number}. {work}")
             elif command != "exit":
                 print("Invalid command")
@@ -97,7 +109,8 @@ class AllAssignments:
                             Assignment(
                                 work["name"],
                                 work["description"],
-                                date(**work["due_date"])
+                                date(**work["due_date"]),
+                                work["course"]
                                 )
                             )
         except FileNotFoundError:
@@ -139,7 +152,8 @@ class AllAssignments:
                                         "description",
                                         "No description for this assignment"
                                         ),
-                                    date(**work["dueDate"])))
+                                    date(**work["dueDate"]),
+                                    course["name"]))
                         except KeyError:
                             pass
                         break
