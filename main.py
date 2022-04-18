@@ -97,18 +97,23 @@ class AllAssignments:
         try:
             with open("ignored.txt") as f:
                 # Ignores certain courses the user chooses
-                IGNORE = f.readlines()
+                IGNORE = {course.strip() for course in f.readlines()}
         except FileNotFoundError:
-            IGNORE = []
+            IGNORE = set()
 
         courses = self.service.courses().list(
                 courseStates=["ACTIVE"], studentId="me",
                 fields="courses(id,name)").execute()["courses"]
+        course_diff = IGNORE - ({course["name"] for course in courses} & IGNORE)
+        if course_diff:
+            print("Ignored courses not found:", end=" ")
+            print(*course_diff, sep=", ")
         return [course for course in courses if course["name"] not in IGNORE]
 
     @staticmethod
     def partial_input(user_command: str) -> str | None:
-        VALID_COMMANDS = ("list", "exit", "look", "attachment", "open")
+        VALID_COMMANDS = ("list","exit", "look", "attachment", "open", 
+                          "ignore", "remove")
         for command in VALID_COMMANDS:
             # Sees if user input partially matches the command name
             matching = all([char == char2 for char, char2 in zip(command, user_command)])
@@ -123,6 +128,8 @@ class AllAssignments:
     def run(self):
         # Commands that require target assignments work
         TARGET_COMMANDS = ("look", "attachment", "open")
+        STRING_TARGET_COMMANDS = ("ignore", "remove")
+
         command = ""
         while command != "exit":
             inp = input("\n-> ").split()
@@ -130,16 +137,21 @@ class AllAssignments:
                 command = self.partial_input(inp[0])
             except IndexError:
                 command = ""
-            try:
+            if command not in STRING_TARGET_COMMANDS:
+                # Integer targets
                 try:
-                    target = int(inp[1])
-                    if target - 1 < 0:
-                        target = None
-                except ValueError:
-                    print("Target needs to be a number!")
-                    continue
-            except IndexError:
-                target = None
+                    try:
+                        target = int(inp[1])
+                        if target - 1 < 0:
+                            target = None
+                    except ValueError:
+                        print("Target needs to be a number!")
+                        continue
+                except IndexError:
+                    target = None
+            else:
+                # String targets
+                target = inp[1]
 
             if command in TARGET_COMMANDS and target is None:
                 # Prevents invalid targets
@@ -167,6 +179,18 @@ class AllAssignments:
 
             elif command == "open":
                 self.get_assignment(target).open()
+
+            elif command == "ignore":
+                with open("ignored.txt", "a") as f:
+                    f.write(target)
+
+            elif command == "remove":
+                with open("ignored.txt") as f:
+                    lines = [line.strip() for line in f.readlines()]
+                lines.remove(target)
+                lines = "\n".join(lines)
+                with open("ignored.txt", "w") as f:
+                    f.write(lines)
 
             elif command != "exit":
                 print("Invalid command")
