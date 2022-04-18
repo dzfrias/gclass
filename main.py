@@ -5,6 +5,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 import json
+import webbrowser
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from _thread import start_new_thread
@@ -38,6 +39,8 @@ class Assignment:
     description: str = field(repr=False)
     due_date: date
     course: str
+    attachment: str | None
+    link: str
 
     def __post_init__(self):
         # Makes all assignments sorted by due_date
@@ -45,10 +48,23 @@ class Assignment:
 
     def describe(self):
         print("Course: " + self.course)
-        print(self.due_date.strftime(
-            f"Due: {format_day(self.due_date)} %Y\n"))
-        print(f"{self.name}\n{'-' * len(self.name)}")
+        print(self.due_date.strftime(f"Due: {format_day(self.due_date)} %Y"))
+        if self.attachment is not None:
+            attachment = "Yes"
+        else:
+            attachment = "No"
+        print(f"Attachment: {attachment}")
+        print(f"\n{self.name}\n{'-' * len(self.name)}")
         print(self.description)
+
+    def open(self):
+        webbrowser.open(self.link)
+
+    def open_attachment(self):
+        if self.attachment is not None:
+            webbrowser.open(self.attachment)
+        else:
+            print("No attachment to open!")
 
     def __str__(self):
         return f"{self.name} --- Due: {format_day(self.due_date)}"
@@ -75,7 +91,7 @@ class AllAssignments:
         # their latest assignments every time
         start_new_thread(self.get_work, ())
 
-    def get_courses(self):
+    def get_courses(self) -> list[dict]:
         try:
             with open("ignored.txt") as f:
                 # Ignores certain courses the user chooses
@@ -89,15 +105,22 @@ class AllAssignments:
         return [course for course in courses if course["name"] not in IGNORE]
 
     @staticmethod
-    def partial_input(user_command) -> str | None:
-        VALID_COMMANDS = ("list", "exit", "look", "today")
+    def partial_input(user_command: str) -> str | None:
+        VALID_COMMANDS = ("list", "exit", "look", "attachment", "open")
         for command in VALID_COMMANDS:
+            # Sees if user input partially matches the command name
             matching = all([char == char2 for char, char2 in zip(command, user_command)])
             if command[:2] == user_command[:2] and matching:
+                # Needs at least 2 characters for a command to be executed
                 return command
         return None
+    
+    def get_assignment(self, index_1: int) -> Assignment:
+        return sorted(self.all_work)[index_1 - 1]
 
     def run(self):
+        # Commands that require target assignments work
+        TARGET_COMMANDS = ("look", "attachment", "open")
         command = ""
         while command != "exit":
             inp = input("\n-> ").split()
@@ -109,13 +132,17 @@ class AllAssignments:
                 try:
                     target = int(inp[1])
                     if target - 1 < 0:
-                        print("Invalid target")
                         target = None
                 except ValueError:
-                    print("Target needs to be a number")
-                    target = None
+                    print("Target needs to be a number!")
+                    continue
             except IndexError:
                 target = None
+
+            if command in TARGET_COMMANDS and target is None:
+                # Prevents invalid targets
+                print(f"Command `{command}` needs a valid target!")
+                continue
 
             if command == "list":
                 bar_printed = False
@@ -131,10 +158,13 @@ class AllAssignments:
                     print(f"{number}. {work}")
 
             elif command == "look":
-                try:
-                    sorted(self.all_work)[target - 1].describe()
-                except TypeError:
-                    print("Command `look` needs a valid target")
+                self.get_assignment(target).describe()
+
+            elif command == "attachment":
+                self.get_assignment(target).open_attachment()
+
+            elif command == "open":
+                self.get_assignment(target).open()
 
             elif command != "exit":
                 print("Invalid command")
@@ -145,14 +175,8 @@ class AllAssignments:
         try:
             with open("assignments.json") as f:
                 for work in json.load(f)["assignments"]:
-                    current_work.append(
-                            Assignment(
-                                work["name"],
-                                work["description"],
-                                date(**work["due_date"]),
-                                work["course"]
-                                )
-                            )
+                    work["due_date"] = date(**work["due_date"])
+                    current_work.append(Assignment(**work))
         except FileNotFoundError:
             pass
         return current_work
@@ -166,7 +190,7 @@ class AllAssignments:
             results = self.service.courses().courseWork().studentSubmissions().list(
                     courseId=course_id, courseWorkId="-", userId="me",
                     states=["CREATED", "RECLAIMED_BY_STUDENT"],
-                    fields='studentSubmissions(courseWorkId)').execute()
+                    fields='studentSubmissions(courseWorkId,assignmentSubmission/attachments/driveFile/alternateLink,alternateLink)').execute()
             if not results:
                 continue
 
@@ -186,6 +210,10 @@ class AllAssignments:
                 for work in classwork:
                     if work["id"] == result["courseWorkId"]:
                         try:
+                            try:
+                                attachment = result["assignmentSubmission"]["attachments"][0]["driveFile"]["alternateLink"]
+                            except KeyError:
+                                attachment = None
                             current_work.append(Assignment(
                                     work["title"],
                                     work.get(
@@ -193,7 +221,9 @@ class AllAssignments:
                                         "No description for this assignment"
                                         ),
                                     date(**work["dueDate"]),
-                                    course["name"]))
+                                    course["name"],
+                                    attachment,
+                                    result["alternateLink"]))
                         except KeyError:
                             pass
                         break
@@ -201,7 +231,7 @@ class AllAssignments:
         if self.all_work != current_work:
             # Moves cursor to the line above and resets prompt
             print("\n\x1b[0G\x1b[1ACurrent work updated! Refresh using `list`",
-                    end="\n-> ")
+                  end="\n-> ")
             self.all_work = current_work
             with open("assignments.json", "w") as f:
                 all_assignments_dict = {
