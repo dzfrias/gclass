@@ -6,7 +6,7 @@ from googleapiclient.discovery import build
 
 import json
 import webbrowser
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, KW_ONLY
 from datetime import date, timedelta
 from _thread import start_new_thread
 from os import get_terminal_size
@@ -36,6 +36,8 @@ class Assignment:
 
     # Parameters
     name: str
+    # Makes all fields after this keyword only
+    _: KW_ONLY
     description: str = field(repr=False)
     due_date: date
     course: str
@@ -175,6 +177,7 @@ class AllAssignments:
         try:
             with open("assignments.json") as f:
                 for work in json.load(f)["assignments"]:
+                    # Changes work to a date object
                     work["due_date"] = date(**work["due_date"])
                     current_work.append(Assignment(**work))
         except FileNotFoundError:
@@ -211,19 +214,20 @@ class AllAssignments:
                     if work["id"] == result["courseWorkId"]:
                         try:
                             try:
+                                # Get the first attachment of the assignment
                                 attachment = result["assignmentSubmission"]["attachments"][0]["driveFile"]["alternateLink"]
                             except KeyError:
                                 attachment = None
                             current_work.append(Assignment(
                                     work["title"],
-                                    work.get(
+                                    description=work.get(
                                         "description",
                                         "No description for this assignment"
                                         ),
-                                    date(**work["dueDate"]),
-                                    course["name"],
-                                    attachment,
-                                    result["alternateLink"]))
+                                    due_date=date(**work["dueDate"]),
+                                    course=course["name"],
+                                    attachment=attachment,
+                                    link=result["alternateLink"]))
                         except KeyError:
                             pass
                         break
