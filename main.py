@@ -8,7 +8,7 @@ import json
 import webbrowser
 from dataclasses import dataclass, field, KW_ONLY
 from datetime import date, timedelta
-from _thread import start_new_thread
+from threading import active_count, Thread
 from os import get_terminal_size
 
 # If modifying these scopes, delete the file token.json.
@@ -87,13 +87,24 @@ class AllAssignments:
     def __init__(self):
         self.service = authenticate()
         # Finds all courses of current user
-        self.courses = self.get_courses()
+        self.courses = self.load_courses()
         self.all_work = self.load_work()
         # Does this in the background so the user doesn't have to wait to see
         # their latest assignments every time
-        start_new_thread(self.get_work, ())
+        work_thread = Thread(target=self.get_work)
+        # Exits thread when main thread stops
+        work_thread.daemon = True
+        work_thread.start()
 
-    def get_courses(self) -> list[dict]:
+    def load_courses(self) -> list[str]:
+        try:
+            with open("courses.json") as f:
+                return json.load(f)["courses"]
+        except FileNotFoundError:
+            self.get_courses()
+            return self.load_courses()
+
+    def get_courses(self):
         try:
             with open("ignored.txt") as f:
                 # Ignores certain courses the user chooses
@@ -108,12 +119,15 @@ class AllAssignments:
         if course_diff:
             print("Ignored courses not found:", end=" ")
             print(*course_diff, sep=", ")
-        return [course for course in courses if course["name"] not in IGNORE]
+
+        with open("courses.json", "w") as f:
+            courses_dict = {"courses": [course for course in courses if course["name"] not in IGNORE]}
+            json.dump(courses_dict, f, indent=4)
 
     @staticmethod
     def partial_input(user_command: str) -> str | None:
         VALID_COMMANDS = ("list","exit", "look", "attachment", "open", 
-                          "ignore", "remove")
+                          "ignore", "remove", "course")
         for command in VALID_COMMANDS:
             # Sees if user input partially matches the command name
             matching = all([char == char2 for char, char2 in zip(command, user_command)])
@@ -183,6 +197,13 @@ class AllAssignments:
             elif command == "ignore":
                 with open("ignored.txt", "a") as f:
                     f.write(target)
+
+            elif command == "course":
+                if active_count() == 1:
+                    self.get_courses()
+                    self.courses = self.load_courses()
+                else:
+                    print("Try again in a few moments")
 
             elif command == "remove":
                 with open("ignored.txt") as f:
