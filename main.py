@@ -96,7 +96,7 @@ class AllAssignments:
         work_thread.daemon = True
         work_thread.start()
 
-    def load_courses(self) -> list[str]:
+    def load_courses(self) -> list[dict]:
         try:
             with open("courses.json") as f:
                 return json.load(f)["courses"]
@@ -115,11 +115,28 @@ class AllAssignments:
         courses = self.service.courses().list(
                 courseStates=["ACTIVE"], studentId="me",
                 fields="courses(id,name)").execute()["courses"]
+        # Finds all the ignored courses that aren't in the course list
         course_diff = IGNORE - ({course["name"] for course in courses} & IGNORE)
         if course_diff:
             print("Ignored courses not found:", end=" ")
             print(*course_diff, sep=", ")
 
+        try:
+            with open("courses.json") as f:
+                json_courses = [course["name"] for course in json.load(f)["courses"]]
+            if len(courses) < len(json_courses):
+                print(f"{len(courses) - len(json_courses)} course(s) removed")
+            elif json_courses != courses:
+                list_courses = [course["name"] for course in courses]
+                json_course_diff = set(list_courses) - set(json_courses)
+                json_course_diff -= IGNORE
+                if json_course_diff:
+                    print("Courses added:", end=" ")
+                    print(*json_course_diff, sep=", ")
+                else:
+                    print("No courses added")
+        except FileNotFoundError:
+            pass
         with open("courses.json", "w") as f:
             courses_dict = {"courses": [course for course in courses if course["name"] not in IGNORE]}
             json.dump(courses_dict, f, indent=4)
