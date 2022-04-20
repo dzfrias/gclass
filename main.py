@@ -30,6 +30,10 @@ def format_day(day: date):
     return day.strftime(f"%B %-d{day_suffix(day.day)}")
 
 
+def up_line(text, rows=1) -> str:
+    return f"\n\x1b[0G\x1b[{rows}A{text}"
+
+
 @dataclass(order=True)
 class Assignment:
     sort_index: date = field(init=False, repr=False)
@@ -147,8 +151,8 @@ class AllAssignments:
 
     @staticmethod
     def partial_input(user_command: str) -> str | None:
-        VALID_COMMANDS = ("list","exit", "look", "attachment", "open", 
-                          "ignore", "remove", "course")
+        VALID_COMMANDS = ("list", "exit", "look", "attachment", "open",
+                          "ignore", "remove", "course", "status")
         for command in VALID_COMMANDS:
             # Sees if user input partially matches the command name
             matching = all([char == char2 for char, char2 in zip(command, user_command)])
@@ -229,6 +233,12 @@ class AllAssignments:
                 else:
                     print("Try again in a few moments")
 
+            elif command == "status":
+                if active_count() == 1:
+                    print("Everything is up to date!")
+                else:
+                    print("Still updating assignments")
+
             elif command == "remove":
                 with open("ignored.txt") as f:
                     lines = [line.strip() for line in f.readlines()]
@@ -303,7 +313,7 @@ class AllAssignments:
 
         if self.all_work != current_work:
             # Moves cursor to the line above and resets prompt
-            print("\n\x1b[0G\x1b[1ACurrent work updated! Refresh using `list`",
+            print(up_line("Current work updated! Refresh using `list`"),
                   end="\n-> ")
             self.all_work = current_work
             with open("assignments.json", "w") as f:
