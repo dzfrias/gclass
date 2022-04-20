@@ -6,10 +6,10 @@ from googleapiclient.discovery import build
 
 import json
 import webbrowser
+import os
 from dataclasses import dataclass, field, KW_ONLY
 from datetime import date, timedelta
 from threading import active_count, Thread
-from os import get_terminal_size
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/classroom.courses.readonly',
@@ -92,8 +92,9 @@ class AllAssignments:
         # Does this in the background so the user doesn't have to wait to see
         # their latest assignments every time
         work_thread = Thread(target=self.get_work)
-        # Exits thread when main thread stops
-        work_thread.daemon = True
+        if __name__ == "__main__":
+            # When run through the command line, daemon should not be true
+            work_thread.daemon = True  # Exits thread when main thread stops
         work_thread.start()
 
     def load_courses(self) -> list[dict]:
@@ -101,6 +102,7 @@ class AllAssignments:
             with open("courses.json") as f:
                 return json.load(f)["courses"]
         except FileNotFoundError:
+            # File will not exist the first time
             self.get_courses()
             return self.load_courses()
 
@@ -123,7 +125,9 @@ class AllAssignments:
 
         try:
             with open("courses.json") as f:
-                json_courses = [course["name"] for course in json.load(f)["courses"]]
+                json_courses = [
+                        course["name"] for course in json.load(f)["courses"]
+                        ]
             if len(courses) < len(json_courses):
                 print(f"{len(courses) - len(json_courses)} course(s) removed")
             elif json_courses != courses:
@@ -152,9 +156,12 @@ class AllAssignments:
                 # Needs at least 2 characters for a command to be executed
                 return command
         return None
-    
-    def get_assignment(self, index_1: int) -> Assignment:
-        return sorted(self.all_work)[index_1 - 1]
+
+    def get_assignment(self, index_1: int) -> Assignment | None:
+        try:
+            return sorted(self.all_work)[index_1 - 1]
+        except IndexError:
+            return None
 
     def run(self):
         # Commands that require target assignments work
@@ -172,8 +179,8 @@ class AllAssignments:
                 # Integer targets
                 try:
                     try:
-                        target = int(inp[1])
-                        if target - 1 < 0:
+                        target = self.get_assignment(int(inp[1]))
+                        if int(inp[1]) < 0:
                             target = None
                     except ValueError:
                         print("Target needs to be a number!")
@@ -194,7 +201,7 @@ class AllAssignments:
                 for number, work in enumerate(sorted(self.all_work), 1):
                     if not bar_printed and work.due_date >= date.today():
                         # Prints a header bar with the current day
-                        term_columns = get_terminal_size()[0]
+                        term_columns = os.get_terminal_size()[0]
                         print("-" * term_columns)
                         print("TODAY".center(term_columns), end="\r")
                         print(format_day(date.today()))
@@ -203,13 +210,13 @@ class AllAssignments:
                     print(f"{number}. {work}")
 
             elif command == "look":
-                self.get_assignment(target).describe()
+                target.describe()
 
             elif command == "attachment":
-                self.get_assignment(target).open_attachment()
+                target.open_attachment()
 
             elif command == "open":
-                self.get_assignment(target).open()
+                target.open()
 
             elif command == "ignore":
                 with open("ignored.txt", "a") as f:
