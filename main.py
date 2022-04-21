@@ -10,6 +10,7 @@ import os
 from dataclasses import dataclass, field, KW_ONLY
 from datetime import date, timedelta
 from threading import active_count, Thread
+from time import time
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/classroom.courses.readonly',
@@ -55,10 +56,7 @@ class Assignment:
     def describe(self):
         print("Course: " + self.course)
         print(self.due_date.strftime(f"Due: {format_day(self.due_date)} %Y"))
-        if self.attachment is not None:
-            attachment = "Yes"
-        else:
-            attachment = "No"
+        attachment = "Yes" if self.attachment is not None else "No"
         print(f"Attachment: {attachment}")
         print(f"\n{self.name}\n{'-' * len(self.name)}")
         print(self.description)
@@ -93,6 +91,7 @@ class AllAssignments:
         # Finds all courses of current user
         self.courses = self.load_courses()
         self.all_work = self.load_work()
+        self.start_time = time()
         # Does this in the background so the user doesn't have to wait to see
         # their latest assignments every time
         work_thread = Thread(target=self.get_work)
@@ -238,6 +237,11 @@ class AllAssignments:
                     print("Everything is up to date!")
                 else:
                     print("Still updating assignments")
+                    # The request takes around 5 seconds on average
+                    expected = 5 - (time() - self.start_time)
+                    if expected < 0:
+                        expected = 0.1
+                    print(f"Expected wait: {expected:.2f}")
 
             elif command == "remove":
                 with open("ignored.txt") as f:
