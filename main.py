@@ -4,6 +4,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from google.auth.exceptions import RefreshError
+from googleapiclient.errors import HttpError
 
 import json
 import webbrowser
@@ -270,14 +271,21 @@ class AllAssignments:
 
     def get_work(self):
         current_work = []
+        invalid_course = False
 
         for course in self.courses:
             course_id = course["id"]
 
-            results = self.service.courses().courseWork().studentSubmissions().list(
-                    courseId=course_id, courseWorkId="-", userId="me",
-                    states=["CREATED", "RECLAIMED_BY_STUDENT"],
-                    fields='studentSubmissions(courseWorkId,assignmentSubmission/attachments/driveFile/alternateLink,alternateLink)').execute()
+            try:
+                results = self.service.courses().courseWork().studentSubmissions().list(
+                        courseId=course_id, courseWorkId="-", userId="me",
+                        states=["CREATED", "RECLAIMED_BY_STUDENT"],
+                        fields='studentSubmissions(courseWorkId,assignmentSubmission/attachments/driveFile/alternateLink,alternateLink)').execute()
+            except HttpError:
+                # If course can't be found, sets flag to update courses
+                invalid_course = True
+                continue
+
             if not results:
                 continue
 
@@ -328,6 +336,11 @@ class AllAssignments:
                             ]
                         }
                 json.dump(all_assignments_dict, f, indent=4)
+
+        if invalid_course:
+            # Refreshes current courses
+            self.get_courses()
+            self.courses = self.load_courses()
 
 
 def authenticate():
